@@ -23,6 +23,7 @@ pub struct IrohSsh {
     pub(crate) public_key: [u8; PUBLIC_KEY_LENGTH],
     pub(crate) inner: Option<Inner>,
     pub(crate) ssh_port: u16,
+    pub(crate) dial_relay: Option<RelayUrl>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +31,8 @@ pub(crate) struct Inner {
     pub endpoint: Endpoint,
     #[allow(dead_code)]
     pub router: Router,
+    /// Relay to dial through when DNS discovery is unavailable.
+    pub dial_relay: Option<RelayUrl>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,4 +43,5 @@ pub struct Builder {
     key_dir: Option<PathBuf>,
     relay_urls: Vec<RelayUrl>,
     extra_relay_urls: Vec<RelayUrl>,
+    dial_relay: Option<RelayUrl>,
 }

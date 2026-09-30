@@ -158,8 +158,17 @@ pub async fn server_mode(server_args: ServerArgs, service: bool) -> anyhow::Resu
 }
 
 pub async fn proxy_mode(proxy_args: ProxyArgs) -> anyhow::Result<()> {
+    let dial_relay = parse_relay_urls(&proxy_args.relay_url)?
+        .first()
+        .cloned()
+        .or_else(|| {
+            parse_relay_urls(&proxy_args.extra_relay_url)
+                .ok()
+                .and_then(|v| v.first().cloned())
+        });
     let iroh_ssh = IrohSsh::builder()
         .accept_incoming(false)
+        .dial_relay(dial_relay)
         .relay_urls(parse_relay_urls(&proxy_args.relay_url)?)
         .extra_relay_urls(parse_relay_urls(&proxy_args.extra_relay_url)?)
         .build()

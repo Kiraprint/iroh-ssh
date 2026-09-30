@@ -8,7 +8,7 @@ use regex::Regex;
 use std::sync::Arc;
 
 use iroh::{
-    Endpoint, EndpointId, RelayConfig, RelayUrl, SecretKey,
+    Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayUrl, SecretKey,
     endpoint::{Connection, RelayMode},
     protocol::{ProtocolHandler, Router},
 };
@@ -27,6 +27,7 @@ impl Builder {
             key_dir: None,
             relay_urls: Vec::new(),
             extra_relay_urls: Vec::new(),
+            dial_relay: None,
         }
     }
 
@@ -52,6 +53,12 @@ impl Builder {
 
     pub fn extra_relay_urls(mut self, urls: Vec<RelayUrl>) -> Self {
         self.extra_relay_urls = urls;
+        self
+    }
+
+    /// Relay URL used to dial the remote endpoint without DNS discovery.
+    pub fn dial_relay(mut self, url: Option<RelayUrl>) -> Self {
+        self.dial_relay = url;
         self
     }
 
@@ -112,6 +119,7 @@ impl Builder {
             secret_key: self.secret_key,
             inner: None,
             ssh_port: self.accept_port.unwrap_or(22),
+            dial_relay: self.dial_relay.clone(),
         };
 
         let router = if self.accept_incoming {
@@ -169,7 +177,11 @@ impl IrohSsh {
     }
 
     fn add_inner(&mut self, endpoint: Endpoint, router: Router) {
-        self.inner = Some(Inner { endpoint, router });
+        self.inner = Some(Inner {
+            endpoint,
+            router,
+            dial_relay: self.dial_relay.clone(),
+        });
     }
 
     pub async fn start_ssh(
@@ -201,9 +213,18 @@ impl IrohSsh {
 
     pub async fn connect_pubkey(&self, endpoint_id: EndpointId) -> anyhow::Result<()> {
         let inner = self.inner.as_ref().expect("inner not set");
+        // Prefer an explicit relay address so connect() never depends on DNS discovery
+        // (n0's dns.iroh.link TXT sync is unreliable; the relay URL alone is enough).
+        let relay = inner.dial_relay.clone().unwrap_or_else(|| {
+            use std::str::FromStr;
+            RelayUrl::from_str("https://use1-1.relay.n0.iroh-canary.iroh.link")
+                .expect("static relay URL parses")
+        });
+        eprintln!("iroh-ssh: dialing via relay {relay} (DNS discovery bypassed)");
+        let addr = EndpointAddr::new(endpoint_id).with_relay_url(relay);
         let conn = inner
             .endpoint
-            .connect(endpoint_id, &IrohSsh::ALPN())
+            .connect(addr, &IrohSsh::ALPN())
             .await?;
         let (mut iroh_send, mut iroh_recv) = conn.open_bi().await?;
         let (mut local_read, mut local_write) = (tokio::io::stdin(), tokio::io::stdout());
